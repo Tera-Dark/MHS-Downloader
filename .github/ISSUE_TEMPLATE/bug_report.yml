@@ -1,0 +1,41 @@
+name: 问题反馈
+description: 安装、界面、收集或下载遇到问题
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先阅读使用指南。不要上传 Cookie、验证码、密码、私人图片、完整任务备份或带敏感信息的截图。
+        优先使用工作台的“诊断信息”，发布前仍请自行检查。
+  - type: input
+    id: version
+    attributes:
+      label: 扩展版本
+      placeholder: 例如 0.5.0
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器与系统
+      placeholder: 例如 Chrome / Edge 版本、Windows / macOS / Linux
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 描述点击了什么、期望什么、实际发生什么。不要提交登录凭据。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 可公开的诊断信息（可选）
+      description: 使用顶部“诊断信息”导出，不是完整任务备份。
+      render: json
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充说明（可选）
+      description: 如附截图，请先遮挡私人作品和链接。公开页面链接仅在你确认可公开且有必要时提供。
