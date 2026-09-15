@@ -207,6 +207,20 @@ class EngineTests(unittest.TestCase):
             self.assertIsNone(archive.testzip())
             self.assertEqual(archive.read('123/001.png'),self.png)
             self.assertEqual(json.loads(archive.read('manifest.json'))['job']['id'],self.job)
+    def test_artist_subfolder_creation(self):
+        self.engine.control(self.job, 'pause')
+        jid = self.engine.create_job({'start':True,'source':'https://www.mihuashi.com/profiles/194372','artist':'藤原可可'})['id']
+        self.discover(jid, {'cursor':{}, 'artist':'藤原可可', 'links':['https://www.mihuashi.com/artworks/19437201']})
+        self.parse({'job':jid, 'url':'https://www.mihuashi.com/artworks/19437201', 'images':[{'url':self.asset}]})
+        row = self.engine.claim()
+        self.assertEqual(row['job'], jid)
+        self.assertEqual(row['artist'], '藤原可可')
+        self.engine.download(Session(self.response()), row)
+        with self.engine.db() as db:
+            f = dict(db.execute('SELECT * FROM files WHERE id=?', (row['id'],)).fetchone())
+        self.assertEqual(f['state'], 'complete')
+        self.assertTrue(f['path'].startswith('images/藤原可可/'))
+        self.assertTrue((self.engine.root / f['path']).is_file())
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

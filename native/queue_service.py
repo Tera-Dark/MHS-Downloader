@@ -34,7 +34,8 @@ class QueueService:
                 scan_retries='INTEGER NOT NULL DEFAULT 3', file_retries='INTEGER NOT NULL DEFAULT 3',
                 scan_attempt='INTEGER NOT NULL DEFAULT 0', scan_next='REAL NOT NULL DEFAULT 0',
                 revision='INTEGER NOT NULL DEFAULT 1', started_at='REAL',
-                trigger='TEXT NOT NULL DEFAULT \'legacy_import\'')
+                trigger='TEXT NOT NULL DEFAULT \'legacy_import\'',
+                artist='TEXT NOT NULL DEFAULT \'\'')
             for name, spec in additions.items():
                 if name not in columns:
                     db.execute(f'ALTER TABLE jobs ADD COLUMN {name} {spec}')
@@ -61,14 +62,15 @@ class QueueService:
         mode = payload.get('mode','download')
         if mode not in ('download','links'): raise ValueError('无效任务模式')
         start = payload.get('start') is True
+        artist = str(payload.get('artist', '')).strip()[:100]
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             previous = db.execute("SELECT id FROM jobs WHERE source=? AND mode=? AND state!='archived' ORDER BY created DESC LIMIT 1",(source,mode)).fetchone()
             if previous:
                 return dict(id=previous[0],existing=True,boot_id=self.boot_id,started=False)
             jid, now = uuid.uuid4().hex, time.time()
-            db.execute('INSERT INTO jobs(id,source,mode,state,scan_state,consent_at,created,updated,started_at,trigger,'+','.join(config)+') VALUES('+','.join('?' for _ in range(10+len(config)))+')',
-                (jid,source,mode,'active' if start else 'paused','pending' if profile else 'finished',0,now,now,now if start else None,'manual_start' if start else 'saved_only',*config.values()))
+            db.execute('INSERT INTO jobs(id,source,mode,state,scan_state,consent_at,created,updated,started_at,trigger,artist,'+','.join(config)+') VALUES('+','.join('?' for _ in range(11+len(config)))+')',
+                (jid,source,mode,'active' if start else 'paused','pending' if profile else 'finished',0,now,now,now if start else None,'manual_start' if start else 'saved_only',artist,*config.values()))
             if not profile: db.execute('INSERT INTO works(job,url) VALUES(?,?)',(jid,source))
             self._event(db,jid,'manual_start' if start else 'created','由用户明确启动：'+source if start else '保存任务，未启动')
         self.wake.set()
@@ -154,10 +156,11 @@ class QueueService:
                 attempt+=1;status='retry_wait';next_at=time.time()+min(120,8*2**(attempt-1))
                 reason+=f'；将在 {int(next_at-time.time())+1} 秒内安排第 {attempt}/{j["scan_retries"]} 次补扫'
                 self._event(db,jid,'rescan_scheduled',reason)
+            artist=str(payload.get('artist','')).strip()[:100]
             c['found']=[r[0] for r in db.execute('SELECT url FROM works WHERE job=? ORDER BY rowid',(jid,))]
             c['expected']=expected
-            db.execute('UPDATE jobs SET cursor=?,scan_state=?,expected=?,reason=?,scan_attempt=?,scan_next=?,updated=? WHERE id=?',
-                       (json.dumps(c),status,expected,reason,attempt,next_at,time.time(),jid))
+            db.execute("UPDATE jobs SET cursor=?,scan_state=?,expected=?,reason=?,scan_attempt=?,scan_next=?,updated=?,artist=CASE WHEN (artist='' OR artist IS NULL) THEN ? ELSE artist END WHERE id=?",
+                       (json.dumps(c),status,expected,reason,attempt,next_at,time.time(),artist,jid))
             if status in ('partial','limited','finished'): self._event(db,jid,'scan_'+status,reason)
         self.wake.set()
         return dict(count=count,state=status,next_at=next_at)
@@ -177,6 +180,9 @@ class QueueService:
             w=db.execute('SELECT state FROM works WHERE job=? AND url=?',(jid,url)).fetchone()
             if not w: raise ValueError('详情不属于本任务')
             if w[0]=='ready': return dict(duplicate=True)
+            artist=str(payload.get('artist','')).strip()[:100]
+            if artist:
+                db.execute("UPDATE jobs SET artist=? WHERE id=? AND (artist='' OR artist IS NULL)", (artist, jid))
             limit,n=self._limit_files(db,j)
             remaining=(j['max_images']-n) if j['max_images'] else 10000-n
             for i,im in enumerate(unique,1):
@@ -207,7 +213,7 @@ class QueueService:
         if self.meta('hold'): return None
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            row=db.execute("SELECT f.*,j.file_retries FROM files f JOIN jobs j ON j.id=f.job WHERE j.state='active' AND f.state IN ('queued','retry') AND f.next_at<=? AND (SELECT COUNT(*) FROM files x WHERE x.job=j.id AND x.state='downloading')<j.concurrency ORDER BY f.rowid LIMIT 1",(time.time(),)).fetchone()
+            row=db.execute("SELECT f.*,j.file_retries,j.artist,j.source FROM files f JOIN jobs j ON j.id=f.job WHERE j.state='active' AND f.state IN ('queued','retry') AND f.next_at<=? AND (SELECT COUNT(*) FROM files x WHERE x.job=j.id AND x.state='downloading')<j.concurrency ORDER BY f.rowid LIMIT 1",(time.time(),)).fetchone()
             if row:
                 db.execute("UPDATE files SET state='downloading',attempts=attempts+1,error='' WHERE id=?",(row['id'],))
                 return dict(row)

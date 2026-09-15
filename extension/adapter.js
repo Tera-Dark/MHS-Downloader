@@ -12,7 +12,32 @@ function pageTask(args = {}) {
   const text=document.body?.innerText||'';
   const blocked=['请完成验证','请先完成验证','拖动滑块','安全验证','访问过于频繁','操作过于频繁','访问受限','登录后查看','登录后可查看','请先登录'].find(t=>text.includes(t)) || '';
   const dialogs=[...document.querySelectorAll('[role="dialog"],.el-dialog,.mhs-dialog,.modal')].filter(visible);
-  const base={pageURL:location.href,title:document.title,blocked:blocked||(dialogs.some(e=>/验证码|手机登录|扫码登录|短信登录/.test(e.innerText))?'登录或验证弹窗':'')};
+  const extractArtist = () => {
+    const nameSelectors = [
+      '.profile-header__name', '.user-name', '.artist-name', '.profile-name',
+      '.painter-name', '.creator__name', '.user-info__name', '.user-info a',
+      'a[href*="/profiles/"]', 'a[href*="/users/"]'
+    ];
+    for (const sel of nameSelectors) {
+      const el = document.querySelector(sel);
+      if (el && visible(el) && el.innerText && el.innerText.trim().length > 0) {
+        const t = el.innerText.trim();
+        if (t.length <= 40 && !/^(关注|粉丝|约稿|私信|主页|首页|米画师)$/.test(t)) return t;
+      }
+    }
+    if (document.title) {
+      let t = document.title.replace(/\s*[-_|]\s*米画师.*$/i, '').trim();
+      if (t.includes('的主页')) return t.replace(/的主页.*$/, '').trim();
+      if (t.includes('的作品')) {
+        const parts = t.split(/\s*[-_|]\s*/);
+        for (const p of parts) if (p.includes('的作品')) return p.replace(/的作品.*$/, '').trim();
+      }
+      if (t.includes(' - ')) return t.split(' - ')[0].trim();
+      if (t && t.length <= 40) return t;
+    }
+    return '';
+  };
+  const base={pageURL:location.href,title:document.title,artist:extractArtist(),blocked:blocked||(dialogs.some(e=>/验证码|手机登录|扫码登录|短信登录/.test(e.innerText))?'登录或验证弹窗':'')};
   if (base.blocked) return base;
   const cards=[...document.querySelectorAll('.user-artwork,.masonry-artwork,[data-artwork-id],a[href*="/artworks/"]')].filter(e=>visible(e)&&!e.closest('aside,footer,[class*="recommend"],[class*="related"]'));
   const root=document.scrollingElement||document.documentElement;

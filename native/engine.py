@@ -6,6 +6,7 @@ import json
 import os
 import random
 import re
+import shutil
 import sqlite3
 import threading
 import time
@@ -21,6 +22,25 @@ from PIL import Image
 HOSTS = {"www.mihuashi.com", "image-assets.mihuashi.com"}
 MAX_BYTES = 128 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 32_000_000
+
+
+def sanitize_folder_name(name, fallback="unknown"):
+    if not name:
+        return fallback
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]', "_", str(name)).strip().strip(".")
+    if cleaned.upper() in {"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "LPT1", "LPT2"}:
+        cleaned = f"{cleaned}_dir"
+    return cleaned[:60] if cleaned else fallback
+
+
+def fallback_artist_folder(source):
+    if not source:
+        return "default"
+    u = urlsplit(str(source))
+    parts = [p for p in u.path.split("/") if p]
+    if len(parts) >= 2 and parts[0] in ("profiles", "users", "artworks"):
+        return f"{parts[0][:-1] if parts[0].endswith('s') else parts[0]}_{parts[1]}"
+    return "default"
 
 
 def site_url(value, profile=False):
@@ -87,7 +107,8 @@ class TransferEngine:
                     id TEXT PRIMARY KEY,source TEXT NOT NULL,mode TEXT NOT NULL,
                     state TEXT NOT NULL DEFAULT 'active',scan_state TEXT NOT NULL DEFAULT 'pending',
                     cursor TEXT NOT NULL DEFAULT '{}',expected INTEGER,reason TEXT NOT NULL DEFAULT '',
-                    consent_at REAL NOT NULL,created REAL NOT NULL,updated REAL NOT NULL);
+                    consent_at REAL NOT NULL,created REAL NOT NULL,updated REAL NOT NULL,
+                    artist TEXT NOT NULL DEFAULT '');
                 CREATE TABLE IF NOT EXISTS works(
                     job TEXT NOT NULL,url TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',
                     attempts INTEGER NOT NULL DEFAULT 0,next_at REAL NOT NULL DEFAULT 0,
@@ -188,16 +209,24 @@ class TransferEngine:
 
     def download(self, session, row):
         fid, url = row["id"], asset_url(row["url"])
+        artist = row.get("artist") or fallback_artist_folder(row.get("source"))
+        folder_name = sanitize_folder_name(artist)
+        target_dir = self.root / "images" / folder_name
+        target_dir.mkdir(parents=True, exist_ok=True)
         # Reuse an identical observed URL only when the previously saved content still verifies.
         with self.db() as db:
             cached = db.execute("SELECT * FROM files WHERE url=? AND state='complete' AND id!=? AND sha256 IS NOT NULL LIMIT 1", (url, fid)).fetchone()
         if cached and cached["path"]:
-            path = self.root / cached["path"]
+            cached_path = self.root / cached["path"]
             try:
-                with open(path, "rb") as handle:
+                with open(cached_path, "rb") as handle:
                     valid = hashlib.file_digest(handle, "sha256").hexdigest() == cached["sha256"]
                 if valid:
-                    self.update_file(fid, state="complete", bytes=cached["bytes"], total=cached["bytes"], path=cached["path"], sha256=cached["sha256"], mime=cached["mime"], error="")
+                    target_file = target_dir / cached_path.name
+                    if not target_file.exists():
+                        shutil.copy2(cached_path, target_file)
+                    new_rel = str(target_file.relative_to(self.root)).replace("\\", "/")
+                    self.update_file(fid, state="complete", bytes=cached["bytes"], total=cached["bytes"], path=new_rel, sha256=cached["sha256"], mime=cached["mime"], error="")
                     return
             except OSError:
                 pass
@@ -308,9 +337,9 @@ class TransferEngine:
             raise ValueError("图片 MIME 与文件实际格式不一致")
         with open(part, "rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
-        dest = self.root / "images" / f"{digest}.{extension}"
+        dest = target_dir / f"{digest}.{extension}"
         os.replace(part, dest)  # Same volume, atomic; identical content shares one pathname.
-        self.update_file(fid, state="complete", bytes=count, total=count, sha256=digest, path=str(dest.relative_to(self.root)), error="")
+        self.update_file(fid, state="complete", bytes=count, total=count, sha256=digest, path=str(dest.relative_to(self.root)).replace("\\", "/"), error="")
 
     def export(self, jid, kind="zip"):
         if kind not in ("zip", "links"):

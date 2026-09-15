@@ -43,7 +43,7 @@ async function ready(slots,name,url,delay){
 async function dom(id,op,args={}){const r=await chrome.scripting.executeScript({target:{tabId:id},func:pageTask,args:[{op,...args}]});const d=r[0]?.result;if(!d)throw fault('DOM','无法读取页面，检查站点权限');if(d.blocked){await hold('AUTH',d.blocked);throw fault('HOLD',d.blocked);}return d;}
 async function mounted(id){const r=await chrome.scripting.executeScript({target:{tabId:id},world:'MAIN',func:readMountedWorks});return r[0]?.result||{links:[],keys:[]};}
 async function hold(code,reason,until=0){const value={code,reason,until};await chrome.storage.local.set({mhsPendingHold:value});await api('/hold',value);await chrome.storage.local.remove('mhsPendingHold');}
-async function checkpoint(j,c,links=[],state='running',reason=''){return api('/jobs/'+j.id+'/discovery',{revision:j.revision,cursor:c,links,state,reason,expected:c.expected??null});}
+async function checkpoint(j,c,links=[],state='running',reason='',artist=''){return api('/jobs/'+j.id+'/discovery',{revision:j.revision,cursor:c,links,state,reason,expected:c.expected??null,artist:artist||c.artist||''});}
 const isSystem=e=>['OFFLINE','NOT_PAIRED','TOKEN_INVALID','VERSION','HOLD','NOT_PAIRED','CLIENT_ORIGIN_DENIED'].includes(e.code);
 async function scan(j,slots){
   let c=JSON.parse(j.cursor||'{}');c.found||=[];c.seen||=[];c.unresolved||=[];
@@ -87,10 +87,10 @@ async function scan(j,slots){
   let extra={links:[],keys:[]};try{extra=await mounted(slot.id);}catch{}
   const fresh=[];for(const raw of [...snap.links,...extra.links]){const u=ArchivePolicy.siteURL(raw);if(u&&!found.has(u)){found.add(u);fresh.push(u);}}
   for(const key of extra.keys||[])seen.add(key);
-  Object.assign(c,{found:[...found],seen:[...seen],expected:snap.expected??c.expected,y:snap.y,height:snap.height,container:snap.container,containers:snap.containers,loading:snap.loading,card_count:snap.card_count,metadata_links:extra.links.length});
+  Object.assign(c,{found:[...found],seen:[...seen],expected:snap.expected??c.expected,y:snap.y,height:snap.height,container:snap.container,containers:snap.containers,loading:snap.loading,card_count:snap.card_count,metadata_links:extra.links.length,artist:snap.artist||c.artist||''});
   c.startedAt||=Date.now();c.last_progress||=Date.now();
   if(fresh.length){c.last_progress=Date.now();c.quietAt=0;}
-  const saved=await checkpoint(j,c,fresh);
+  const saved=await checkpoint(j,c,fresh,'running','',snap.artist||c.artist);
   if(saved.stale||['limited','partial','finished','retry_wait'].includes(saved.state))return;
   if(c.expected!=null&&found.size>=c.expected&&c.expected>0){await checkpoint(j,c,[],'finished','已达到页面标示数量');return;}
   if(Date.now()-c.last_progress>45000){await checkpoint(j,c,[],'partial','45 秒未发现新作品，切换恢复策略');return;}
@@ -122,7 +122,7 @@ async function parseWork(w,slots){
     if(!old.size){if(Date.now()-s.since>45000)throw fault('PAGE_TIMEOUT','45 秒内未找到详情展示图');await saveSlots(slots);return;}
     if(!d.bottom&&s.scrolls<12){await dom(s.id,'advance');s.scrolls++;await saveSlots(slots);return;}
     if(Date.now()-s.quietAt<900){await saveSlots(slots);return;}
-    await api('/parsed',{job:w.job,url:w.url,revision:w.revision,images:s.images,title:d.title});s.target='';await saveSlots(slots);
+    await api('/parsed',{job:w.job,url:w.url,revision:w.revision,images:s.images,title:d.title,artist:d.artist||''});s.target='';await saveSlots(slots);
   }catch(e){if(isSystem(e))throw e;await api('/work-failed',{job:w.job,url:w.url,revision:w.revision,error:e.message});if(slots.detail)slots.detail.target='';await saveSlots(slots);}
 }
 async function tick(){

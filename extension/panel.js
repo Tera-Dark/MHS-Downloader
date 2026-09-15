@@ -23,7 +23,8 @@ function taskHTML(j){
   const pending=(j.works.pending||0)+(j.works.retry||0),wait=(j.files.queued||0)+(j.files.retry||0);
   const retry=j.scan_state==='retry_wait'?` · ${Math.max(0,Math.ceil(j.scan_next-Date.now()/1000))} 秒后第 ${j.scan_attempt}/${j.scan_retries} 次补扫`:'';
   const primary=j.state==='active'&&!j.settled?'<button class="secondary small" data-action="pause">暂停</button>':'<button class="secondary small" data-action="resume">继续</button>';
-  return `<article class="task" data-id="${j.id}"><div class="task-top"><div><strong class="task-title">${/\/artworks\//.test(j.source)?'单幅作品':'画师作品'} · ${j.mode==='links'?'链接采集':'图片下载'}</strong><span class="task-id">${j.id.slice(0,8)} · ${date(j.created)}</span></div><span class="badge ${j.state!=='active'?'gray':warn?'amber':''}">${status}</span></div>
+  const artistPrefix=j.artist?esc(j.artist)+' · ':'';
+  return `<article class="task" data-id="${j.id}"><div class="task-top"><div><strong class="task-title">${artistPrefix}${/\/artworks\//.test(j.source)?'单幅作品':'画师作品'} · ${j.mode==='links'?'链接采集':'图片下载'}</strong><span class="task-id">${j.id.slice(0,8)} · ${date(j.created)}</span></div><span class="badge ${j.state!=='active'?'gray':warn?'amber':''}">${status}</span></div>
     <a class="source-link" href="${esc(j.source)}" target="_blank" rel="noreferrer">${esc(j.source)} ↗</a>
     <div class="metric"><span>发现作品</span><b>${works} / ${expected??'总数未知'} 幅</b></div><div class="bar"><span style="width:${workPercent}%"></span></div>
     <div class="metric"><span>${j.mode==='links'?'已记录图片链接':'已保存图片'}</span><b>${done} / ${files} 张 · ${size(j.bytes)}</b></div><div class="bar download"><span style="width:${files?done/files*100:0}%"></span></div>
