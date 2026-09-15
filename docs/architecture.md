@@ -1,71 +1,157 @@
-# 架构与数据流（0.6.0）
+> **历史架构说明（0.7.0 基线）。0.7.1 已修复 Origin 兼容性、移除许可勾选门槛并增强启动器，具体以 [更新说明](../UPDATE-0.7.1.md) 为准。下文的“未执行真实浏览器验证”是当时状态，不代表 0.7.1 当前验证状态。**
 
-## 责任边界
+# 米画师归档器优化：代码审阅与混合架构
 
-| 模块 | 拥有的责任 |
+日期：2026-09-15。针对 Windows + Chrome；基线和参考提交见 THIRD_PARTY.md。
+
+## 结论
+
+优先消除任务对工作台页面生命周期的依赖，然后做持久队列、流水线与错误隔离；不要先无限提高并发，更不要把某个平台的 API 签名照搬到另一个平台。
+
+本次交付是独立 Hybrid 0.7 预览源码包，原仓库保持不变。它已实现新的调度与本机下载路径，但不是实站验收后的正式发行版。
+
+## 1. 原项目问题的代码证据
+
+以下是静态审阅确认的行为，不是从截图猜测的性能实测。
+
+### 工作台关闭就是任务关闭
+
+- [`background.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/background.js)：`openManager(false)` 打开后台工作台；`CONTROL_START` 把任务交给工作台。`tabs.onRemoved` 将 `runView.phase` 写成 `closed`。
+- [`page-button.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/page-button.js)：把 `closed` 映射为截图中的“工作台已关闭，任务未继续”。
+- [`lifecycle.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/lifecycle.js)：页面离开、freeze、超过 90 秒的调度间隙等会停止任务。
+
+因此后台 Service Worker 原本主要承担启动、转发和状态监测，而非持久任务执行。截图足以与此状态映射对应，但不能证明是谁关闭了工作台，也不能证明站点限流或用户操作是这一次中断的原因。
+
+### 扫描重复导航成本高
+
+- [`scan-service.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/scan-service.js)：先滚动收集，再解析缺少 URL 的卡片；扫描完成后才进入下载。
+- [`navigation-service.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/navigation-service.js)：`resolveCard()` 点击卡片、等待、后退；必要时重开主页并重放滚动。`tabFor()` 共用一个 ownedTab。
+- [`task-service.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/task-service.js)：详情经 `tabFor()` 和 `waitLoaded()` 获取，候选可复用，但不同阶段的往返仍有成本。
+
+### 部分采集阻挡下载、错误向上传播
+
+- `scanAndMaybeDownload()` 在后台扫描结果为 `partial` 时直接返回，要求工作台确认。
+- 详情解析、队列部分处理路径抛出错误后，外层 `operate()` 停止本轮。
+- “已收集 12 / 91，下载 0”可以由这种阶段串联和部分完成策略造成，不代表带宽一定差。
+
+### 原项目已经有持久化，不应全部推倒
+
+- [`state-store.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/state-store.js)：IndexedDB、增量脏记录、事务提交、任务 URL 索引。
+- [`image-service.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/image-service.js)：Worker 解码验证与图片暂存提交。
+- [`recovery-service.js`](https://github.com/Tera-Dark/artwork-archive/blob/d5a0a12e6c3d27e5e3094a65df209115223cfd12/extension/recovery-service.js)：ZIP 暂存恢复和下载历史核对，但把中断任务改为错误，要求手动检查和重置。
+
+问题不是“完全没保存”，而是缺少独立执行、阶段检查点和安全自动恢复。这个区别决定了不能只增加一个 localStorage 字段就声称解决稳定性。
+
+## 2. 从 XHS-Downloader 借鉴什么，不借鉴什么
+
+| 已观察到的实现 | 本混合版处理 |
 |---|---|
-| `manager.js` | App 组合根，创建服务、连接依赖，不再承载扫描或图片算法 |
-| `controller.js` | 静态 UI 事件、独占工作台初始化、内部消息入口 |
-| `run-service.js` + `lifecycle.js` | 一轮操作的互斥、许可与保护检查、停止、冻结/长间隔检测 |
-| `task-service.js` | 任务创建、候选复用、导入导出、队列入口 |
-| `navigation-service.js` | 独立任务页与导航/返回恢复 |
-| `scan-service.js` + `scanner.js` | 主页发现、滚动、必要点击与 DOM 候选识别 |
-| `download-service.js` | 有界请求流水线、图片来源记录、分卷与浏览器保存提交 |
-| `recovery-service.js` | 暂存重建、下载归属核对、不确定结果人工处理；不发起下载 |
-| `state-store.js` | IndexedDB、任务 URL 索引、深层修改追踪、增量事务、迁移和暂存回收 |
-| `image-service.js` + `image-worker.js` + `image-codec.js` | 单个校验 Worker 生命周期、头尺寸预检、缩小解码、增量 SHA-256/CRC32 |
-| `view-service.js` + `qol.js` | 状态展示、分页队列、错误引导、预设、诊断、呈现摘要 |
-| `zip.js` | STORE ZIP 写入器；接收 Blob 与已知 CRC，避免整卷字节数组 |
-| `background.js` + `page-button.js` | 会话登记、合法内部命令转发、浮动入口、访问限制观测 |
-| `core-policy.js` + `ui-model.js` | 可独立测试的 URL/归属/导入/界面纯规则 |
+| `source/application/download.py`：Semaphore 有界并发；`source/module/static.py` 的 MAX_WORKERS=4 | 本机固定有界下载线程池，默认 3，最大 4；与页面导航节流分开 |
+| `source/module/manager.py`：分离并复用请求/下载会话 | 每个下载线程复用 requests.Session，避免跨线程共享可变会话 |
+| 下载临时文件 + Range | `.part` + Range/If-Range，额外严格校验 200/206/416 与实体一致性 |
+| `source/module/recorder.py`：SQLite 作品 ID、元数据记录 | SQLite WAL 持久化 jobs / works / files / exports / meta，事务领取，成功记录幂等 |
+| 浏览器脚本向本地主程序推送任务 | 扩展向配对后的回环 API 提交任务，界面不再拥有下载循环 |
+| 下载进度回调与 GUI 队列 | 本机传输字节落盘，控制台轮询展示分阶段进度 |
 
-工厂接收显式 `ctx`；跨服务调用走 `ctx.api`，呈现接口走 `ctx.ui`。`ctx.state` 是唯一任务真值，`ctx.run` 只承载操作生命周期，`ctx.transfer` 属于下载流水线，`ctx.store`、`ctx.images`、`ctx.lifecycle` 各自拥有资源。不是用大型框架再造第二套状态，也不是宣称所有服务完全无共享上下文。
+参考：[download.py](https://github.com/JoeanAmier/XHS-Downloader/blob/47840a1bee8438324ff10753c4291148c46071c8/source/application/download.py)、[manager.py](https://github.com/JoeanAmier/XHS-Downloader/blob/47840a1bee8438324ff10753c4291148c46071c8/source/module/manager.py)、[recorder.py](https://github.com/JoeanAmier/XHS-Downloader/blob/47840a1bee8438324ff10753c4291148c46071c8/source/module/recorder.py)、[tools.py](https://github.com/JoeanAmier/XHS-Downloader/blob/47840a1bee8438324ff10753c4291148c46071c8/source/module/tools.py)、[GUI/backend.py](https://github.com/JoeanAmier/XHS-Downloader/blob/47840a1bee8438324ff10753c4291148c46071c8/source/GUI/backend.py)。
 
-## 持久边界
+不直接移植的细节：
 
-IndexedDB 数据库 `artwork-archive-v3`（schema 3）包含：
+1. 审阅版本的下载路径根据临时文件长度发 Range，然后用 `ab` 写入；未见完整的 206 区间与 If-Range 实体一致性校验。不能把它当作严格续传的现成证明。
+2. 通用 retry 包装按返回值重试，并不是分类指数退避。
+3. 部分请求设置 `verify=False`；混合版不关闭 TLS 校验。
+4. GUI 的内存任务队列不等于所有阶段都有崩溃恢复检查点。本混合版的持久 jobs/works/files 模型是新实现。
+5. 不照搬 100 MiB 的单下载写入缓冲；本版按 256 KiB 读取并流式落盘。
+6. 不复制小红书接口、签名、Cookie 提取；也不猜测米画师不存在的开放 API。
 
-- `tasks`：按规范化作品 URL 存储任务，保留队列顺序号。
-- `meta`：按键存储 settings、ui、logs、scans、archives、recovery 等元数据。
-- `chunks`：未验证输入，键为 `[inputUUID, chunkIndex]`，每块至多 1 MB。
-- `images`：已验证图片 Blob、MIME、尺寸与 CRC32，键为 SHA-256。
+## 3. 已实现的数据流
 
-任务与元数据由深层 Proxy 追踪修改，提交时只克隆脏记录，不遍历/序列化所有任务。提交队列使用调用时快照；只有提交版本仍相同时才清除脏标记，防止覆盖等待期间的新修改。读写事务请求 `durability: strict`，事务完成才算已提交；这仍不能替代浏览器、文件系统与硬盘自身的可靠性保证。
+```text
+官网浮层 / 扩展控制台
+           │ 已确认许可 + 主页/作品 URL
+           ▼
+Chrome Service Worker ────── 本机认证回环 API
+  │  无常驻 UI 依赖                   │
+  ├─ 列表标签页                       ▼
+  │  直接链接优先                 SQLite / WAL
+  │  无链接卡片普通点击          jobs / works / files
+  │  扫描检查点                每次已提交变更是恢复边界
+  └─ 详情标签页                       │
+     DOM 候选 + 已加载详情复用          ▼
+                               3 路本机下载线程
+                               Session / 退避 / Range
+                                      │
+                                      ▼
+                                .part → 校验 → images
+                                      │
+                                      ▼
+                               独立 ZIP 快照导出线程
+```
 
-旧版 `chrome.storage.local.stateV2` 在首次打开时校验并迁移，迁移事务完成后才删除旧副本。迁移失败、未知 schema 或结构损坏不覆盖原数据，并提供原始记录导出。没有双份整状态同步层。保护暂停、浮动位置和小型呈现摘要仍放 `chrome.storage.local`；控制登记放 `storage.session`。授权勾选不持久化。
+扩展 `setTimeout` 只用于活跃期快速调度，不是持久任务状态；回收后由 Chrome alarms / 浏览器启动事件恢复。这里没有用 offscreen 文档或静默音频伪造无限常驻。
 
-## 图片与内存
+### 浏览器侧
 
-网络响应串行写入至多 1 MB 的输入块，读取方背压；不收集整张图的 Uint8Array 列表。每张响应上限 40 MB。Blob 引用送入唯一 Worker，其任务队列串行执行：
+- `hybrid-worker.js`：列表和详情交替推进，避免其中一阶段饿死。
+- 原页面适配器依旧使用公开 DOM；直接链接无需卡片往返。
+- 若普通点击已打开详情，尝试复用已加载详情图片，减少再次访问。
+- 每次新增链接先事务写入本机，再继续滚动/点击。
+- 无链接点击的意图先写检查点，重启后优先核对已发生导航，而不是盲目重放点击。
+- 仅自动任务标签页设置 `autoDiscardable: false`；检测到已丢弃页时尝试重载。它不是操作系统休眠或浏览器退出后的运行保证。
+- 未解决卡片、长时间页面变化或滚动恢复失败均有边界，标为 partial 并允许补扫。
 
-1. 读取至多 1 MB 图片头；识别 JPEG / PNG / WebP / GIF 并检查尺寸，最多 3200 万像素、单边 16384。不支持/无法安全识别的文件明确失败。
-2. `createImageBitmap` 请求至多 256×256 验证输出，及时关闭 bitmap；30 秒超时终止 Worker。
-3. 每次最多 256 KB 增量计算 SHA-256 与 CRC32。
-4. **图片 Blob 与 staged 来源记录在同一事务提交**。事务失败回滚可恢复声明。
+### 本机侧
 
-保存的始终是原响应字节，验证用缩小输出不写入 ZIP。ZIP 用 Blob 条目和已知 CRC 组合头/目录，不调用整卷 `arrayBuffer`，不分配整卷 Uint8Array。分卷阈值是图片字节数，不是进程 RSS 上限；浏览器网络、Blob 实现、图片解码器和站点页面的内部内存不受 JS 绝对控制。未引入 OPFS 或 `unlimitedStorage` 权限。
+- `jobs`：来源、许可确认时间、模式、暂停状态、扫描检查点与页面标示数量。
+- `works`：作品 URL 幂等键、解析状态、重试次数、下次重试时间。
+- `files`：任务/作品/图片序号唯一键、真实观察 URL、字节数、validator、内容哈希和路径。
+- `exports`：异步快照导出状态。
+- `meta`：全局访问暂停、本机配对来源、浏览器心跳。
+- 领取下载使用 `BEGIN IMMEDIATE` 事务，避免同一个文件被多个下载线程同时领取。
+- 程序重启将 `downloading` 回到 retry，实际 `.part` 长度而非 UI 数值是续传依据。
+- 文件下载成功和导出成功分开统计；仅已提交任务的下载能在 Chrome 退出后继续。
 
-## 保存与关闭恢复
+## 4. 当前交付与尚未交付
 
-- ZIP 与原生下载均先提交 `requesting` 日志（URL、唯一目标名、时间、来源 ID），然后调用下载 API，再提交返回的 ID。
-- 重开后只核对严格归属：本扩展、原 URL、唯一文件名、合理请求时间；已有 ID 还必须一致。旧版无日志的记录沿用旧的 ID+URL/文件名核对规则。导入记录不用于自动定位/取消。
-- 若唯一匹配的浏览器记录为 complete 且文件存在，恢复成功状态；然后才回收暂存。
-- 历史缺失、仍在下载、归属不符或多个候选时标记 uncertain，不自动确认、取消或重复保存。用户先检查目录，再明确允许重试；重试可能产生重复文件。
-- 关闭后仅丢弃未提交的输入；已验证图片重建为待保存卷，可不勾采集许可离线保存。初始化或新操作清理遗留输入块；孤立已验证图片按仍被 staged 引用的哈希回收。
-- 删除暂存须明确确认；JSON 备份不包含二进制，卸载/清除扩展数据会删暂存。
+### 已实现
 
-## 休眠与运行边界
+- 与控制台生命周期解耦的浏览器调度和本机下载。
+- 检查点、持久任务队列、边扫描边下载。
+- 单项错误隔离、有限退避、访问暂停。
+- 严格条件续传、格式与尺寸校验、URL/内容去重。
+- 缺失/失效链接的显式重新解析入口。
+- 成功图片流式打包 ZIP、来源清单、直链 TXT。
+- Windows 启动脚本、新扩展控制台与响应式官网面板。
 
-工作台全生命周期持有 Web Locks 独占锁，操作开始前另有同步互斥标志。冻结、离开、超过 90 秒的执行间隔或明显时钟跳变触发停止并取消扩展 fetch。恢复后不自动继续网络；已提交图片可离线处理，未完成任务经人工检查、重置再开始。
+### 没有声称完成
 
-这不是永在线服务。系统休眠/浏览器关闭不能继续采集；浏览器已启动的原生下载和官网自己的网络行为也不由本工具完全控制。当前状态说明和关闭后的任务恢复不依赖 unload 回调成功写完。
+- 米画师登录实站的字段/卡片全覆盖，以及真实速度与成功率对比。
+- Windows 原生 EXE、自动启动托盘服务、Chrome 商店签名发布。
+- 旧扩展 IndexedDB 的自动迁移。
+- 浏览器关闭之后仍自动解析新的米画师页面。
+- 私有接口、隐藏应用状态或网络响应捕获适配；当前不依赖这些尚未验证的机制。
+- 系统休眠期间保持网络下载。
+- 所有受保护的 CDN 地址都能无 Cookie 在本机下载。
 
-## 队列与呈现
+## 5. 下一步优先级
 
-URL 索引用于新增/合并和已成功 URL 复用。UI 只渲染当前分页，任务修订号与筛选/选择/忙碌状态组成呈现缓存键；没有变化的队列不重建 DOM。状态渲染合并同一轮微任务调用，`runView` 摘要相同则不重复写本地存储。5000 条真实浏览器测试检查一条编辑只写一个任务、分页与无旧整状态副本。
+1. **P0 实站采样**：以用户已获许可的 10 / 50 / 91 件作品主页分别验证卡片结构、懒加载、详情候选。对照来源清单，不只看 UI 完成数。
+2. **P0 Windows / Chrome 故障验收**：关闭控制台、手动回收 SW、重启 Chrome、网络中断、本机程序重启、磁盘不足；不得误报成功或重复拼接字节。
+3. **P1 提高列表发现效率**：若页面有可合法使用、正常加载的结构化作品数据，基于已脱敏样本添加可版本化适配器；验证后再替代部分 DOM 点击。不能在没有样本时编造接口 URL。
+4. **P1 旧数据迁移**：显式导入旧来源清单，核验本地已有文件，成功后才继承完成状态。
+5. **P1 运行体验**：打包 Windows 托盘程序、退出确认、存储空间提示、任务过滤和分页；最终可由一个安装器处理依赖和扩展配对。
+6. **P2 大规模队列**：图片级事件日志、任务租约/多采集器所有权、同 URL 在途下载合并、更细的域级限流与失败指标。
 
-## 不变的网络/隐私边界
+## 6. 如何评价提速
 
-只声明两个原有主机范围；不读取 Cookie、不重放私有 API，不推测原稿 URL。主页先后台滚动批量收集，必要时正常点击卡片；发现 URL 先持久化再返回。部分结果需人工确认。403/429/验证等形成持久保护暂停，解除后也不自动重试。ZIP fetch 拒绝跳转；原生下载受浏览器 API 可观测性限制。
+建议在相同账号、同一已获许可作品集、相同网络环境分别记录：
 
-完整备份包含用户资料；公开诊断是独立白名单，不含图片、URL、备注、路径或完整日志。所有执行代码随扩展提供，没有远程代码与运行时依赖。
+- 从点击开始到第一张图片成功落盘的时间。
+- 总发现 / 解析 / 下载耗时，分别统计。
+- 页面完整导航次数与未解决卡片数。
+- 实际保存图片数、总字节数、重复传输字节数。
+- 网络错误后的恢复次数与成功率。
+- 控制台关闭后 60 秒内队列推进情况。
+- 整体与失败路径峰值内存、磁盘暂存、CPU。
+
+合理预期是更早出现首张图片、减少部分重复页面访问、普通失败不再停止整批；在实站基准完成前，不宣称“快 5 倍”“100% 不断”或“91/91 必定全部下载”。

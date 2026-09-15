@@ -1,16 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "画页存档 · 作品批量整理",
-  "version": "0.6.0",
-  "description": "从获授权的米画师页面整理作品，支持主页收集、ZIP 打包、去重与来源记录。提供新手引导、速度预设及本地任务恢复。",
+  "name": "画页存档 · Hybrid 预览版",
+  "version": "0.7.1",
+  "description": "扩展解析公开作品，本机程序负责持久队列、下载与续传。关闭控制台不停止任务。",
   "minimum_chrome_version": "109",
-  "permissions": ["storage", "scripting", "downloads", "webRequest"],
-  "host_permissions": ["https://www.mihuashi.com/*", "https://image-assets.mihuashi.com/*"],
+  "permissions": ["storage", "scripting", "alarms", "webRequest"],
+  "host_permissions": [
+    "https://www.mihuashi.com/*",
+    "https://image-assets.mihuashi.com/*",
+    "http://127.0.0.1/*"
+  ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "hybrid-worker.js"
   },
   "action": {
-    "default_title": "打开画页存档",
+    "default_title": "画页存档 · 本机任务控制台",
     "default_icon": {
       "16": "icon16.png",
       "32": "icon32.png",
@@ -27,11 +31,11 @@
   "content_scripts": [
     {
       "matches": ["https://www.mihuashi.com/*"],
-      "js": ["page-button.js"],
+      "js": ["hybrid-page.js"],
       "run_at": "document_idle"
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none';"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' http://127.0.0.1:47653;"
   }
 }

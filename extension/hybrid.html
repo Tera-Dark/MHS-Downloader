@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>画页存档 · 本机控制台</title>
+    <link rel="stylesheet" href="hybrid.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <img src="icon48.png" width="38" height="38" alt="" />
+        <div>画页存档 <span>HYBRID / 0.7.1 FIX</span></div>
+      </div>
+      <div id="connection" class="pill">连接本机引擎…</div>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <div class="eyebrow">LOCAL FIRST. ALWAYS RESUMABLE.</div>
+          <h1>把收藏留给自己。<br /><em>把等待交给后台。</em></h1>
+          <p>
+            控制台只是窗口，不再是任务引擎。已解析的图片由本机程序持续下载；<br />网页解析由
+            Chrome 采集器负责，普通网络失败不会阻塞整批任务。
+          </p>
+        </div>
+        <div class="intro-mark">
+          ↘<small>ON YOUR<br />OWN MACHINE</small>
+        </div>
+      </section>
+      <div id="error" class="notice error" role="alert" hidden></div>
+      <section id="pairing" class="card">
+        <div class="section-title">
+          <h2>01 · 连接你的本机引擎</h2>
+          <button id="togglePair" class="quiet">展开 / 收起</button>
+        </div>
+        <div id="pairBody">
+          <p class="muted">
+            先双击
+            <code>START-WINDOWS.bat</code
+            >，再粘贴控制台显示的配对令牌。令牌不上传到任何服务器。
+          </p>
+          <form id="pairForm" class="form-row">
+            <input
+              id="token"
+              type="password"
+              autocomplete="off"
+              placeholder="粘贴本机配对令牌"
+              aria-label="本机配对令牌"
+              required
+            /><button id="pairButton" class="primary" type="submit">
+              连接本机
+            </button>
+          </form>
+          <button id="diagnose" type="button" class="quiet">
+            检查本机服务（无需令牌）
+          </button>
+          <p class="muted small">
+            扩展与本机程序都应为 0.7.1。连接失败时，下方会显示原因。
+          </p>
+        </div>
+        <p id="pairMessage" class="feedback" role="status" aria-live="polite">
+          等待连接
+        </p>
+        <p
+          id="connectionError"
+          class="feedback failure"
+          role="alert"
+          hidden
+        ></p>
+      </section>
+      <section class="card">
+        <div class="section-title">
+          <h2>02 · 添加作品或画师主页</h2>
+          <span class="muted">边发现 · 边解析 · 边下载</span>
+        </div>
+        <form id="createForm">
+          <div class="form-row">
+            <input
+              id="source"
+              type="url"
+              placeholder="https://www.mihuashi.com/users/…"
+              aria-label="画师主页或作品 URL"
+              required
+            /><select id="mode" aria-label="任务模式">
+              <option value="download">收集并下载图片</option>
+              <option value="links">只收集图片直链</option></select
+            ><button class="primary" type="submit">添加任务 ↗</button>
+          </div>
+          <p class="muted small">
+            使用提示：请尊重作品许可与站点规则。此提示不阻塞任务添加。
+          </p>
+        </form>
+        <p
+          id="taskMessage"
+          class="feedback"
+          role="status"
+          aria-live="polite"
+        ></p>
+        <p class="muted small">
+          无需导出
+          Cookie。仅处理官网正常可见的详情展示图，不承诺原始上传文件；遇到验证或限流保留进度并暂停。
+        </p>
+      </section>
+      <div id="hold" class="notice" hidden>
+        <strong id="holdTitle"></strong>
+        <p id="holdReason"></p>
+        <button id="clearHold">已检查官网，解除访问暂停</button>
+      </div>
+      <section class="metrics">
+        <div><span>已发现作品</span><strong id="mWorks">—</strong></div>
+        <div><span>已解析作品</span><strong id="mParsed">—</strong></div>
+        <div><span>已保存图片</span><strong id="mFiles">—</strong></div>
+        <div><span>已传输数据</span><strong id="mBytes">—</strong></div>
+      </section>
+      <section class="card">
+        <div class="section-title">
+          <h2>03 · 任务队列</h2>
+          <button id="refresh" class="quiet">刷新状态 ↻</button>
+        </div>
+        <p id="browser" class="muted">等待浏览器采集器连接…</p>
+        <div id="jobs" class="jobs">
+          <div class="empty">还没有任务。粘贴一个主页链接，从这里开始。</div>
+        </div>
+        <p class="muted small">
+          暂停会停止本任务的后续解析与下载，已在途操作可能完成一个检查点。ZIP
+          为点击时的已完成图片快照；不会等待整批结束，也不会阻塞后续下载。
+        </p>
+      </section>
+      <section class="bottom-grid">
+        <div class="card">
+          <h2>导出记录</h2>
+          <div id="exports" class="muted">
+            暂无导出。图片先保存到本机，按需打包 ZIP。
+          </div>
+        </div>
+        <div class="card">
+          <h2>需要关注</h2>
+          <div id="errors" class="muted">没有待处理错误。</div>
+        </div>
+      </section>
+      <footer>
+        <span id="rootPath">数据只保存在你的电脑。</span>
+        <p>
+          关闭此页不停止任务 · 关闭 Chrome 后网页解析等待重连 ·
+          关闭本机程序后下载等待重启
+        </p>
+      </footer>
+    </main>
+    <script src="hybrid-ui.js"></script>
+  </body>
+</html>

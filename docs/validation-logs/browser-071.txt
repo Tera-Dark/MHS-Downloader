@@ -1,0 +1,9 @@
+PASS service health diagnosis in real extension
+PASS wrong token: visible actionable error
+PASS POST pair and subsequent real GET state
+PASS add task without checkbox, visible success and queue row
+PASS synthetic profile -> detail -> native persistent link record
+PASS pause updates button label despite focus
+PASS close/reopen console restores connection and task
+Observed sanitized transport: [["GET", "/v1/health", "<absent>", true], ["GET", "/v1/next", "<absent>", true], ["GET", "/v1/state", "<absent>", true], ["POST", "/v1/heartbeat", "chrome-extension://lfajkohmfbhndkfopgolpljnokfdoinn", true], ["POST", "/v1/jobs", "chrome-extension://lfajkohmfbhndkfopgolpljnokfdoinn", true], ["POST", "/v1/jobs/778944c133c94dec90ef642e4562494d/control", "chrome-extension://lfajkohmfbhndkfopgolpljnokfdoinn", true], ["POST", "/v1/jobs/778944c133c94dec90ef642e4562494d/discovery", "chrome-extension://lfajkohmfbhndkfopgolpljnokfdoinn", true], ["POST", "/v1/pair", "chrome-extension://lfajkohmfbhndkfopgolpljnokfdoinn", true], ["POST", "/v1/parsed", "chrome-extension://lfajkohmfbhndkfopgolpljnokfdoinn", true]]
+PASS no UI JavaScript exceptions

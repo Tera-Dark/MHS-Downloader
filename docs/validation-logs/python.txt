@@ -1,0 +1,47 @@
+test_bad_token_denied (test_api.APITests.test_bad_token_denied) ... ok
+test_get_without_origin_with_client_header (test_api.APITests.test_get_without_origin_with_client_header) ... ok
+test_health_probe_exposes_no_private_data (test_api.APITests.test_health_probe_exposes_no_private_data) ... ok
+test_host_rebinding_denied (test_api.APITests.test_host_rebinding_denied) ... ok
+test_identity_header_alone_is_not_authentication (test_api.APITests.test_identity_header_alone_is_not_authentication) ... ok
+test_invalid_non_ascii_token_is_401_not_a_crash (test_api.APITests.test_invalid_non_ascii_token_is_401_not_a_crash) ... ok
+test_job_roundtrip_and_pause (test_api.APITests.test_job_roundtrip_and_pause) ... ok
+test_no_origin_no_identity_rejected (test_api.APITests.test_no_origin_no_identity_rejected) ... ok
+test_null_origin_rejected (test_api.APITests.test_null_origin_rejected) ... ok
+test_origin_identity_mismatch_rejected (test_api.APITests.test_origin_identity_mismatch_rejected) ... ok
+test_paired_state (test_api.APITests.test_paired_state) ... ok
+test_pairing_without_origin_with_valid_token (test_api.APITests.test_pairing_without_origin_with_valid_token) ... ok
+test_preflight (test_api.APITests.test_preflight) ... ok
+test_ssrf_url_denied (test_api.APITests.test_ssrf_url_denied) ... ok
+test_task_without_checkbox_is_accepted (test_api.APITests.test_task_without_checkbox_is_accepted) ... ok
+test_unpaired_extension_denied (test_api.APITests.test_unpaired_extension_denied) ... ok
+test_unpaired_identity_without_origin_rejected (test_api.APITests.test_unpaired_identity_without_origin_rejected) ... ok
+test_web_origin_cannot_spoof_identity_header (test_api.APITests.test_web_origin_cannot_spoof_identity_header) ... ok
+test_web_origin_denied (test_api.APITests.test_web_origin_denied) ... ok
+test_403_does_not_stop_other_jobs (test_engine.EngineTests.test_403_does_not_stop_other_jobs) ... ok
+test_416_clears_bad_part (test_engine.EngineTests.test_416_clears_bad_part) ... ok
+test_429_holds_all_downloads (test_engine.EngineTests.test_429_holds_all_downloads) ... ok
+test_atomic_claim (test_engine.EngineTests.test_atomic_claim) ... ok
+test_bad_206_clears_partial (test_engine.EngineTests.test_bad_206_clears_partial) ... ok
+test_checkbox_not_required_and_no_confirmation_fabricated (test_engine.EngineTests.test_checkbox_not_required_and_no_confirmation_fabricated) ... ok
+test_correct_resume (test_engine.EngineTests.test_correct_resume) ... ok
+test_duplicate_submit_and_discovery (test_engine.EngineTests.test_duplicate_submit_and_discovery) ... ok
+test_expired_link_can_be_reparsed_without_deleting_successes (test_engine.EngineTests.test_expired_link_can_be_reparsed_without_deleting_successes) ... ok
+test_full_download_and_hash (test_engine.EngineTests.test_full_download_and_hash) ... ok
+test_non_image_response_rejected (test_engine.EngineTests.test_non_image_response_rejected) ... ok
+test_pause_stops_claim (test_engine.EngineTests.test_pause_stops_claim) ... ok
+test_redirect_domain_guard (test_engine.EngineTests.test_redirect_domain_guard) ... ok
+test_restart_requeues_only_unfinished (test_engine.EngineTests.test_restart_requeues_only_unfinished) ... ok
+test_server_ignores_range_restarts (test_engine.EngineTests.test_server_ignores_range_restarts) ... ok
+test_truncated_transfer_can_resume_after_restart (test_engine.EngineTests.test_truncated_transfer_can_resume_after_restart) ... ok
+test_verified_same_url_reuses_file_without_network (test_engine.EngineTests.test_verified_same_url_reuses_file_without_network) ... ok
+test_without_validator_restarts (test_engine.EngineTests.test_without_validator_restarts) ... ok
+test_zip_contains_manifest_and_completed_file (test_engine.EngineTests.test_zip_contains_manifest_and_completed_file) ... ok
+test_200_never_appends (test_engine.PolicyTests.test_200_never_appends) ... ok
+test_invalid_range_rejected (test_engine.PolicyTests.test_invalid_range_rejected) ... ok
+test_urls (test_engine.PolicyTests.test_urls) ... ok
+test_valid_206 (test_engine.PolicyTests.test_valid_206) ... ok
+
+----------------------------------------------------------------------
+Ran 42 tests in 1.139s
+
+OK

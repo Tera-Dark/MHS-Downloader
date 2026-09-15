@@ -1,30 +1,5 @@
-# Local builds, test results and browser profiles
-artifacts/
-node_modules/
-.cache/
 .venv/
 __pycache__/
-.pytest_cache/
-coverage/
-playwright-report/
-test-results/
-
-# Credentials and private inputs
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-cookies*.json
-storage-state*.json
-user-data/
-downloads/
-private-data/
-*.log
-
-# OS / editor metadata
-.DS_Store
-Thumbs.db
-Desktop.ini
-.vscode/
-.idea/
+data/
+*.pyc
+node_modules/
