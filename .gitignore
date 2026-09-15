@@ -1,5 +1,9 @@
+data/
 .venv/
 __pycache__/
-data/
+.cache/
 *.pyc
+*.tmp
+pairing-token.txt
+*.sqlite3*
 node_modules/

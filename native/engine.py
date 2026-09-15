@@ -1,4 +1,4 @@
-"""Artwork Archive Hybrid: local, durable engine. Original MIT implementation."""
+"""MHS-Downloader: local, durable engine. Original MIT implementation."""
 from __future__ import annotations
 
 import hashlib
@@ -69,7 +69,7 @@ class Interrupted(Exception):
     pass
 
 
-class Engine:
+class TransferEngine:
     def __init__(self, root, workers=3, start=True):
         self.root = Path(root).resolve()
         for name in ("", "parts", "images", "exports"):
@@ -135,132 +135,6 @@ class Engine:
         with self.db() as db:
             db.execute("INSERT OR REPLACE INTO meta VALUES(?,?)", (key, json.dumps(value)))
 
-    def create_job(self, payload):
-        source = str(payload.get("source", ""))
-        profile = not bool(re.search(r"/artworks/\d+/?$", source))
-        source = site_url(source, profile)
-        mode = payload.get("mode", "download")
-        if mode not in ("download", "links"):
-            raise ValueError("无效任务模式")
-        with self.db() as db:
-            db.execute("BEGIN IMMEDIATE")
-            previous = db.execute("SELECT id FROM jobs WHERE source=? AND mode=? AND state IN ('active','paused','blocked') ORDER BY created DESC LIMIT 1", (source, mode)).fetchone()
-            if previous:
-                return {"id": previous[0], "existing": True}
-            jid, now = uuid.uuid4().hex, time.time()
-            db.execute("INSERT INTO jobs(id,source,mode,scan_state,consent_at,created,updated) VALUES(?,?,?,?,?,?,?)", (jid, source, mode, "pending" if profile else "finished", 0, now, now))
-            if not profile:
-                db.execute("INSERT INTO works(job,url) VALUES(?,?)", (jid, source))
-        self.wake.set()
-        return {"id": jid}
-
-    def snapshot(self):
-        with self.db() as db:
-            jobs = [dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY created DESC LIMIT 100")]
-            for j in jobs:
-                j.pop("cursor", None)
-                j["works"] = {r[0]: r[1] for r in db.execute("SELECT state,COUNT(*) FROM works WHERE job=? GROUP BY state", (j["id"],))}
-                j["files"] = {r[0]: r[1] for r in db.execute("SELECT state,COUNT(*) FROM files WHERE job=? GROUP BY state", (j["id"],))}
-                n = db.execute("SELECT SUM(bytes),SUM(COALESCE(total,bytes)) FROM files WHERE job=?", (j["id"],)).fetchone()
-                j["bytes"], j["total_bytes"] = n[0] or 0, n[1] or 0
-                j["settled"] = j["scan_state"] in ("finished", "partial") and not any(j["works"].get(s) for s in ("pending", "retry")) and not any(j["files"].get(s) for s in ("queued", "retry", "downloading"))
-            errors = [dict(r) for r in db.execute("SELECT job,work AS url,state,error FROM files WHERE error!='' ORDER BY rowid DESC LIMIT 30")]
-            errors += [dict(r) for r in db.execute("SELECT job,url,state,error FROM works WHERE error!='' ORDER BY rowid DESC LIMIT 30")]
-            exports = [dict(r) for r in db.execute("SELECT * FROM exports ORDER BY created DESC LIMIT 30")]
-        return {"version": "0.7.1-hybrid-preview", "jobs": jobs, "errors": errors, "exports": exports,
-                "hold": self.meta("hold"), "collector": self.meta("collector"), "workers": self.workers,
-                "root": str(self.root)}
-
-    def next_browser(self):
-        hold = self.meta("hold")
-        if hold:
-            return {"hold": hold}
-        now = time.time()
-        with self.db() as db:
-            # Separate candidates enable alternating discovery and details without starving either.
-            scan = db.execute("SELECT * FROM jobs WHERE state='active' AND scan_state IN ('pending','running') ORDER BY created LIMIT 1").fetchone()
-            work = db.execute("SELECT w.*,j.mode,j.source FROM works w JOIN jobs j ON j.id=w.job WHERE j.state='active' AND w.state IN ('pending','retry') AND w.next_at<=? ORDER BY w.rowid LIMIT 1", (now,)).fetchone()
-        return {"scan": dict(scan) if scan else None, "work": dict(work) if work else None}
-
-    def discovery(self, jid, payload):
-        raw_links = payload.get("links", [])
-        if not isinstance(raw_links, list) or len(raw_links) > 5000:
-            raise ValueError("单次发现列表不能超过 5000 条")
-        links = [site_url(x) for x in raw_links]
-        cursor = payload.get("cursor", {})
-        if len(json.dumps(cursor)) > 1024 * 1024:
-            raise ValueError("扫描检查点过大")
-        state = payload.get("state", "running")
-        if state not in ("running", "finished", "partial"):
-            raise ValueError("无效扫描状态")
-        with self.db() as db:
-            db.execute("BEGIN IMMEDIATE")
-            if not db.execute("SELECT 1 FROM jobs WHERE id=?", (jid,)).fetchone():
-                raise ValueError("任务不存在")
-            count = db.execute("SELECT COUNT(*) FROM works WHERE job=?", (jid,)).fetchone()[0]
-            for link in links:
-                if count >= 5000:
-                    state = "partial"
-                    break
-                count += db.execute("INSERT OR IGNORE INTO works(job,url) VALUES(?,?)", (jid, link)).rowcount
-            expected = payload.get("expected")
-            if expected is not None and (not isinstance(expected, int) or not 0 <= expected <= 1000000):
-                raise ValueError("无效作品数量")
-            db.execute("UPDATE jobs SET cursor=?,scan_state=?,expected=COALESCE(?,expected),reason=?,updated=? WHERE id=?", (json.dumps(cursor), state, expected, str(payload.get("reason", ""))[:500], time.time(), jid))
-        return {"count": count}
-
-    def parsed(self, payload):
-        jid, url = payload["job"], site_url(payload["url"])
-        images = payload.get("images", [])
-        if not 1 <= len(images) <= 30:
-            raise ValueError("详情页没有有效图片，或图片数量超过 30")
-        for im in images:
-            asset_url(im["url"])
-        with self.db() as db:
-            db.execute("BEGIN IMMEDIATE")
-            job = db.execute("SELECT mode FROM jobs WHERE id=?", (jid,)).fetchone()
-            work = db.execute("SELECT state FROM works WHERE job=? AND url=?", (jid, url)).fetchone()
-            if not job or not work:
-                raise ValueError("详情不属于已登记任务")
-            if work[0] == "ready":
-                return {"duplicate": True}
-            for i, im in enumerate(images, 1):
-                fid = hashlib.sha256(f"{jid}:{url}:{i}".encode()).hexdigest()
-                db.execute("INSERT OR IGNORE INTO files(id,job,work,ordinal,url,state,observed_width,observed_height) VALUES(?,?,?,?,?,?,?,?)", (fid, jid, url, i, im["url"], "queued" if job[0] == "download" else "link", int(im.get("width", 0)), int(im.get("height", 0))))
-            db.execute("UPDATE works SET state='ready',title=?,error='' WHERE job=? AND url=?", (str(payload.get("title", ""))[:500], jid, url))
-        self.wake.set()
-        return {"ok": True}
-
-    def fail_work(self, payload):
-        with self.db() as db:
-            row = db.execute("SELECT attempts FROM works WHERE job=? AND url=?", (payload["job"], payload["url"])).fetchone()
-            if not row:
-                return
-            n = row[0] + 1
-            db.execute("UPDATE works SET state=?,attempts=?,next_at=?,error=? WHERE job=? AND url=?", ("retry" if n < 3 else "failed", n, time.time() + min(60, 5 * 2**n), str(payload.get("error", "解析失败"))[:500], payload["job"], payload["url"]))
-
-    def control(self, jid, action):
-        with self.db() as db:
-            if not db.execute("SELECT 1 FROM jobs WHERE id=?", (jid,)).fetchone():
-                raise ValueError("任务不存在")
-            if action in ("pause", "resume"):
-                db.execute("UPDATE jobs SET state=?,updated=? WHERE id=?", ("paused" if action == "pause" else "active", time.time(), jid))
-            elif action == "retry":
-                db.execute("UPDATE works SET state='pending',attempts=0,next_at=0,error='' WHERE job=? AND state IN ('failed','blocked')", (jid,))
-                db.execute("UPDATE files SET state='queued',attempts=0,next_at=0,error='' WHERE job=? AND state IN ('failed','blocked')", (jid,))
-                db.execute("UPDATE jobs SET state='active' WHERE id=?", (jid,))
-            elif action == "refresh-links":
-                db.execute("UPDATE works SET state='pending',attempts=0,next_at=0,error='' WHERE job=? AND url IN (SELECT work FROM files WHERE job=? AND state IN ('failed','blocked'))", (jid, jid))
-                db.execute("DELETE FROM files WHERE job=? AND state IN ('failed','blocked')", (jid,))
-                db.execute("UPDATE jobs SET state='active' WHERE id=?", (jid,))
-            elif action == "rescan":
-                source = db.execute("SELECT source FROM jobs WHERE id=?", (jid,)).fetchone()[0]
-                site_url(source, True)
-                db.execute("UPDATE jobs SET scan_state='pending',cursor='{}',reason='',state='active' WHERE id=?", (jid,))
-            else:
-                raise ValueError("无效操作")
-        self.wake.set()
-
     def set_hold(self, code, reason, until=0):
         current = self.meta("hold") or {}
         self.set_meta("hold", {"code": str(code), "reason": str(reason)[:500], "until": max(float(until), float(current.get("until", 0))), "at": time.time()})
@@ -271,16 +145,6 @@ class Engine:
             raise ValueError("尚在服务器指定的冷却时间内")
         self.set_meta("hold", None)
         self.wake.set()
-
-    def claim(self):
-        if self.meta("hold"):
-            return None
-        with self.db() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT f.* FROM files f JOIN jobs j ON j.id=f.job WHERE j.state='active' AND f.state IN ('queued','retry') AND f.next_at<=? ORDER BY f.rowid LIMIT 1", (time.time(),)).fetchone()
-            if row:
-                db.execute("UPDATE files SET state='downloading',attempts=attempts+1,error='' WHERE id=?", (row["id"],))
-                return dict(row)
 
     def update_file(self, fid, **values):
         assert set(values) <= {"state", "bytes", "total", "validator", "path", "sha256", "error", "next_at", "mime"}
@@ -297,7 +161,7 @@ class Engine:
     def worker(self):
         session = requests.Session()
         session.trust_env = False  # Do not silently forward through ambient proxies or netrc credentials.
-        session.headers.update({"User-Agent": "ArtworkArchiveHybrid/0.7", "Accept-Encoding": "identity", "Referer": "https://www.mihuashi.com/"})
+        session.headers.update({"User-Agent": "MHS-Downloader/0.8", "Accept-Encoding": "identity", "Referer": "https://www.mihuashi.com/"})
         try:
             while not self.stop.is_set():
                 try:
@@ -312,7 +176,7 @@ class Engine:
                         self.update_file(row["id"], state="retry", next_at=time.time() + 1)
                     except (requests.RequestException, OSError) as exc:
                         n = row["attempts"] + 1
-                        self.update_file(row["id"], state="retry" if n < 4 else "failed", error=f"网络或文件系统错误：{type(exc).__name__}", next_at=time.time() + min(120, 2**n * 2) + random.uniform(0, 2))
+                        self.update_file(row["id"], state="retry" if n <= row.get("file_retries", 3) else "failed", error=f"网络或文件系统错误：{type(exc).__name__}", next_at=time.time() + min(120, 2**n * 2) + random.uniform(0, 2))
                     except Exception as exc:
                         self.update_file(row["id"], state="failed", error=str(exc)[:500])
                 except Exception as exc:
@@ -381,7 +245,7 @@ class Engine:
                 return
             if status == 416:
                 part.unlink(missing_ok=True)
-                self.update_file(fid, state="retry" if row["attempts"] < 3 else "failed", bytes=0, validator=None, next_at=time.time() + 3, error="Range 不可满足，清除不匹配暂存")
+                self.update_file(fid, state="retry" if row["attempts"] < row.get("file_retries", 3) else "failed", bytes=0, validator=None, next_at=time.time() + 3, error="Range 不可满足，清除不匹配暂存")
                 return
             response.raise_for_status()
             try:
@@ -474,7 +338,7 @@ class Engine:
                 job = dict(db.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone())
                 files = [dict(r) for r in db.execute("SELECT * FROM files WHERE job=? ORDER BY work,ordinal", (jid,))]
                 works = [dict(r) for r in db.execute("SELECT * FROM works WHERE job=?", (jid,))]
-            dest = self.root / "exports" / f"archive_{jid[:8]}_{eid[:8]}.{'zip' if kind == 'zip' else 'txt'}"
+            dest = self.root / "exports" / f"MHS_{jid[:8]}_{eid[:8]}.{'zip' if kind == 'zip' else 'txt'}"
             if kind == "links":
                 part.write_text("\n".join(dict.fromkeys(f["url"] for f in files)) + "\n", encoding="utf-8")
             else:
@@ -504,3 +368,28 @@ class Engine:
         self.wake.set()
         for thread in self.threads:
             thread.join(timeout=25)
+
+
+from queue_service import QueueService
+
+class Engine(QueueService, TransferEngine):
+    def __init__(self, root, workers=4, start=True):
+        # One-time consistent SQLite backup BEFORE touching the legacy queue.
+        path=Path(root).resolve()/'archive.sqlite3'
+        if path.exists():
+            from contextlib import closing
+            with closing(sqlite3.connect(path)) as source:
+                cols={r[1] for r in source.execute('PRAGMA table_info(jobs)')}
+                backup=path.with_name('archive.pre-0.8.0.sqlite3')
+                if cols and 'revision' not in cols and not backup.exists():
+                    temp=backup.with_suffix('.tmp')
+                    with closing(sqlite3.connect(temp)) as dest:
+                        source.backup(dest)
+                    os.replace(temp,backup)
+        TransferEngine.__init__(self, root, workers=workers, start=False)
+        self.upgrade_queue()
+        if start:
+            for i in range(self.workers):
+                thread=threading.Thread(target=self.worker,name=f"download-{i}",daemon=True)
+                thread.start()
+                self.threads.append(thread)

@@ -1,20 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "画页存档 · Hybrid 预览版",
-  "version": "0.7.1",
-  "description": "扩展解析公开作品，本机程序负责持久队列、下载与续传。关闭控制台不停止任务。",
-  "minimum_chrome_version": "109",
-  "permissions": ["storage", "scripting", "alarms", "webRequest"],
+  "name": "MHS-Downloader",
+  "version": "0.8.0",
+  "description": "米画师页内采集面板。手动启动、数量限制、断点队列与有界补扫；本机负责保存文件。",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "storage",
+    "scripting",
+    "alarms",
+    "webRequest"
+  ],
   "host_permissions": [
     "https://www.mihuashi.com/*",
     "https://image-assets.mihuashi.com/*",
     "http://127.0.0.1/*"
   ],
   "background": {
-    "service_worker": "hybrid-worker.js"
+    "service_worker": "worker.js"
   },
   "action": {
-    "default_title": "画页存档 · 本机任务控制台",
+    "default_title": "MHS-Downloader · 米画师页内面板",
     "default_icon": {
       "16": "icon16.png",
       "32": "icon32.png",
@@ -30,12 +35,28 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.mihuashi.com/*"],
-      "js": ["hybrid-page.js"],
+      "matches": [
+        "https://www.mihuashi.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' http://127.0.0.1:47653;"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "panel.html",
+        "panel.css",
+        "panel.js"
+      ],
+      "matches": [
+        "https://www.mihuashi.com/*"
+      ]
+    }
+  ]
 }

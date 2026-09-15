@@ -104,7 +104,7 @@ class APITests(unittest.TestCase):
     def test_health_probe_exposes_no_private_data(self):
         response=self.session.get(self.base+'/health',timeout=3)
         self.assertEqual(response.status_code,200)
-        self.assertEqual(response.json(),{'service':'artwork-archive-hybrid','version':'0.7.1','protocol':2})
+        data=response.json();self.assertEqual(data.pop('service'),'mhs-downloader');self.assertEqual(data.pop('version'),'0.8.0');self.assertEqual(data.pop('protocol'),3);self.assertEqual(len(data.pop('boot_id')),32);self.assertEqual(data,{})
     def test_invalid_non_ascii_token_is_401_not_a_crash(self):
         response=self.session.get(self.base+'/state',headers={**self.headers,'Authorization':'Bearer é'},timeout=3)
         self.assertEqual(response.status_code,401)

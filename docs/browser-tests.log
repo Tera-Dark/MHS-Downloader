@@ -1,0 +1,8 @@
+PASS embedded panel; actual token error/pair/GET state; no preset, no next after pairing; closed shadow/SOP boundary
+PASS actual browser discovery -> detail -> native SQLite link, not just UI/mocked runtime
+PASS 14/91 -> 91/91 with 12-second loading, nested scroller, five mounted cards, zero card-click navigation
+PASS incomplete first pass automatically reloaded after persisted backoff and recovered 14/91 -> 91/91
+PASS in-panel configure-and-continue and native ZIP export
+PASS pause/reopen preserves progress, source stays blank; standalone control refused; no UI JS exceptions
+Sanitized observed transport: [["GET", "/v1/health"], ["GET", "/v1/next"], ["GET", "/v1/state"], ["POST", "/v1/heartbeat"], ["POST", "/v1/jobs"], ["POST", "/v1/jobs/0ba36ddae73c480d88fa4ab310647985/discovery"], ["POST", "/v1/jobs/6db8d994e5af41b29cba297726f949de/discovery"], ["POST", "/v1/jobs/e261350b9f3d4a9e94403f49c9237aac/control"], ["POST", "/v1/jobs/e261350b9f3d4a9e94403f49c9237aac/discovery"], ["POST", "/v1/jobs/e261350b9f3d4a9e94403f49c9237aac/export"], ["POST", "/v1/pair"], ["POST", "/v1/parsed"], ["POST", "/v1/pause-all"]]
+PASS actual Chromium restart with persisted token and active history does not arm or poll the queue

@@ -14,8 +14,8 @@ from urllib.parse import urlsplit
 
 from engine import Engine
 
-VERSION = "0.7.1"
-PROTOCOL = 2
+VERSION = "0.8.0"
+PROTOCOL = 3
 
 
 def instance_lock(root):
@@ -43,7 +43,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", default=str(Path(__file__).resolve().parents[1] / "data"))
     parser.add_argument("--port", type=int, default=47653)
-    parser.add_argument("--workers", type=int, default=3)
+    parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
     root = Path(args.data).resolve()
     lock = instance_lock(root)
@@ -62,7 +62,7 @@ def main():
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"
-        server_version = "ArtworkArchive/0.7"
+        server_version = "MHS-Downloader/0.8"
 
         def log_message(self, *_):
             pass  # Never log tokens or signed image query strings.
@@ -124,9 +124,9 @@ def main():
                 return self.send_json(403, {"error": "Host 被拒绝", "code": "HOST_DENIED"})
             # This public health probe reveals no token, task data, origin list or disk path.
             if path == "/v1/health" and self.command == "GET":
-                return self.send_json(200, {"service": "artwork-archive-hybrid", "version": VERSION, "protocol": PROTOCOL})
+                return self.send_json(200, {"service": "mhs-downloader", "version": VERSION, "protocol": PROTOCOL, "boot_id": engine.boot_id})
             if not self.client_origin():
-                return self.send_json(403, {"error": "请求来源不匹配，或缺少扩展标识；请重新加载 0.7.1 扩展", "code": "CLIENT_ORIGIN_DENIED"})
+                return self.send_json(403, {"error": "请求来源不匹配，或缺少扩展标识；请重新加载 0.8.0 扩展", "code": "CLIENT_ORIGIN_DENIED"})
             if not hmac.compare_digest(self.headers.get("Authorization", "").encode("utf-8"), ("Bearer " + token).encode("utf-8")):
                 return self.send_json(401, {"error": "配对令牌错误，请复制当前本机窗口显示的完整令牌", "code": "TOKEN_INVALID"})
             if not self.origin_ok(pairing=path == "/v1/pair"):
@@ -167,21 +167,30 @@ def main():
                 elif path == "/v1/hold":
                     engine.set_hold(payload.get("code", "AUTH"), payload.get("reason", "请检查官网"), payload.get("until", 0))
                     result = {"ok": True}
+                elif path == "/v1/pause-all":
+                    result = engine.pause_all()
+                elif path == "/v1/open-folder":
+                    folder=payload.get("folder", "exports")
+                    if folder not in ("exports","images",""): raise ValueError("无效目录")
+                    if os.name != "nt": raise ValueError("此按钮仅支持 Windows；可按显示的路径打开目录")
+                    os.startfile(str(engine.root / folder))
+                    result = {"ok": True}
                 elif path == "/v1/clear-hold":
                     if payload.get("confirmed") is not True:
                         raise ValueError("需要人工确认官网访问状态")
                     engine.clear_hold()
                     result = {"ok": True}
                 else:
-                    match = re.fullmatch(r"/v1/jobs/([a-f0-9]{32})/(discovery|control|export)", path)
+                    match = re.fullmatch(r"/v1/jobs/([a-f0-9]{32})/(discovery|control|export|diagnostic)", path)
                     if not match:
                         return self.send_json(404, {"error": "接口不存在"})
                     jid, operation = match.groups()
                     if operation == "discovery":
                         result = engine.discovery(jid, payload)
                     elif operation == "control":
-                        engine.control(jid, payload.get("action"))
-                        result = {"ok": True}
+                        result = engine.control(jid, payload.get("action"), payload.get("settings"))
+                    elif operation == "diagnostic":
+                        result = engine.diagnostic(jid)
                     else:
                         result = engine.export(jid, payload.get("kind", "zip"))
                 self.send_json(200, result or {"ok": True})
@@ -199,11 +208,11 @@ def main():
         lock.close()
         raise SystemExit(f"端口 {args.port} 无法监听：{exc}")
     engine = Engine(root, workers=args.workers)
-    print("\n画页存档 · Hybrid 0.7.1 连接修复版", flush=True)
+    print("\nMHS-Downloader 0.8.0 页内版", flush=True)
     print(f"本机地址：http://{authority}\n数据目录：{root}", flush=True)
-    print(f"连接自检：http://{authority}/v1/health （应显示 version 0.7.1）", flush=True)
-    print(f"\n请将以下配对令牌粘贴到 Chrome 扩展控制台：\n\n{token}\n", flush=True)
-    print("令牌仅供本机使用，请勿截图公开。保持此窗口运行；Ctrl+C 安全退出。", flush=True)
+    print(f"连接自检：http://{authority}/v1/health （应显示 version 0.8.0）", flush=True)
+    print(f"\n请将以下配对令牌粘贴到 米画师页面 → MHS 浮动面板 → 连接与设置：\n\n{token}\n", flush=True)
+    print("令牌仅供本机使用。打开米画师页面的 MHS 浮动按钮进行配对。配对不启动任务。\n本次启动已暂停旧任务；需要点击“继续”才能恢复。保持此窗口运行；Ctrl+C 安全退出。", flush=True)
     def shutdown(*_):
         threading.Thread(target=server.shutdown, daemon=True).start()
     signal.signal(signal.SIGINT, shutdown)

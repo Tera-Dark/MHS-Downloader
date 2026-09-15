@@ -71,11 +71,11 @@ class EngineTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.engine = Engine(self.temp.name, start=False)
-        self.job = self.engine.create_job({'source':'https://www.mihuashi.com/users/test', 'consent':True})['id']
+        self.job = self.engine.create_job({'start':True,'source':'https://www.mihuashi.com/users/test', 'consent':True})['id']
         self.url = 'https://www.mihuashi.com/artworks/123'
         self.asset = 'https://image-assets.mihuashi.com/a.png'
-        self.engine.discovery(self.job, {'links':[self.url], 'cursor':{'y':200}, 'expected':3})
-        self.engine.parsed({'job':self.job, 'url':self.url, 'images':[{'url':self.asset,'width':800,'height':800}]})
+        self.discover(self.job, {'links':[self.url], 'cursor':{'y':200}, 'expected':3})
+        self.parse({'job':self.job, 'url':self.url, 'images':[{'url':self.asset,'width':800,'height':800}]})
         image = Image.new('RGB', (800,800), '#315b43')
         out = io.BytesIO(); image.save(out, format='PNG'); self.png=out.getvalue()
     def tearDown(self):
@@ -84,18 +84,25 @@ class EngineTests(unittest.TestCase):
     def file(self):
         with self.engine.db() as db:
             return dict(db.execute('SELECT * FROM files WHERE job=?',(self.job,)).fetchone())
+    def revision(self, jid):
+        with self.engine.db() as db:
+            return db.execute('SELECT revision FROM jobs WHERE id=?',(jid,)).fetchone()[0]
+    def discover(self, jid, payload):
+        return self.engine.discovery(jid,dict(payload,revision=self.revision(jid)))
+    def parse(self, payload):
+        return self.engine.parsed(dict(payload,revision=self.revision(payload['job'])))
     def response(self, data=None, status=200, **headers):
         if data is None: data=self.png
         return Response(data,status,{'Content-Type':'image/png','Content-Length':str(len(data)),'ETag':'"v1"',**headers})
     def test_checkbox_not_required_and_no_confirmation_fabricated(self):
-        jid=self.engine.create_job({'source':self.url})['id']
+        jid=self.engine.create_job({'start':True,'source':self.url})['id']
         with self.engine.db() as db:
             self.assertEqual(db.execute('SELECT consent_at FROM jobs WHERE id=?',(jid,)).fetchone()[0],0)
     def test_duplicate_submit_and_discovery(self):
-        same = self.engine.create_job({'source':'https://www.mihuashi.com/users/test', 'consent':True})
+        same = self.engine.create_job({'start':True,'source':'https://www.mihuashi.com/users/test', 'consent':True})
         self.assertEqual(same['id'],self.job)
-        self.engine.discovery(self.job,{'links':[self.url,self.url]})
-        self.engine.parsed({'job':self.job,'url':self.url,'images':[{'url':self.asset}]})
+        self.discover(self.job,{'links':[self.url,self.url]})
+        self.parse({'job':self.job,'url':self.url,'images':[{'url':self.asset}]})
         with self.engine.db() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM works').fetchone()[0],1)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM files').fetchone()[0],1)
@@ -108,6 +115,8 @@ class EngineTests(unittest.TestCase):
         self.engine.close()
         self.engine = Engine(self.temp.name,start=False)
         self.assertEqual(self.file()['state'],'retry')
+        self.assertIsNone(self.engine.next_browser()['scan'])
+        self.engine.control(self.job,'resume')
         self.assertEqual(json.loads(self.engine.next_browser()['scan']['cursor'])['y'],200)
     def test_full_download_and_hash(self):
         self.engine.download(Session(self.response()),self.engine.claim())
@@ -139,6 +148,7 @@ class EngineTests(unittest.TestCase):
         part=Path(self.temp.name)/'parts'/(record['id']+'.part')
         self.assertEqual(part.stat().st_size,20)
         self.engine.close();self.engine=Engine(self.temp.name,start=False)
+        self.engine.control(self.job,'resume')
         self.engine.download(Session(self.response(self.png[20:],206,**{'Content-Range':f'bytes 20-{len(self.png)-1}/{len(self.png)}'})),self.engine.claim())
         self.assertEqual(self.file()['state'],'complete')
     def test_bad_206_clears_partial(self):
@@ -172,8 +182,8 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.engine.download(Session(Response(b'<html>login</html>',headers={'Content-Type':'text/html'})),self.engine.claim())
     def test_verified_same_url_reuses_file_without_network(self):
         self.engine.download(Session(self.response()),self.engine.claim())
-        jid=self.engine.create_job({'source':self.url,'consent':True})['id']
-        self.engine.parsed({'job':jid,'url':self.url,'images':[{'url':self.asset}]})
+        jid=self.engine.create_job({'start':True,'source':self.url,'consent':True})['id']
+        self.parse({'job':jid,'url':self.url,'images':[{'url':self.asset}]})
         session=Session()
         self.engine.download(session,self.engine.claim())
         self.assertEqual(session.calls,[])
@@ -184,7 +194,7 @@ class EngineTests(unittest.TestCase):
         self.engine.control(self.job,'refresh-links')
         work=self.engine.next_browser()['work']
         self.assertEqual(work['url'],self.url)
-        self.engine.parsed({'job':self.job,'url':self.url,'images':[{'url':self.asset+'?fresh=1'}]})
+        self.parse({'job':self.job,'url':self.url,'images':[{'url':self.asset+'?fresh=1'}]})
         self.assertEqual(self.file()['url'],self.asset+'?fresh=1')
         self.assertEqual(self.file()['state'],'queued')
     def test_zip_contains_manifest_and_completed_file(self):

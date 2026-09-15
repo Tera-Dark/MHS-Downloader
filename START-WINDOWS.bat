@@ -6,7 +6,9 @@ set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 set "PYTHON="
 
-rem Optional custom path, e.g. set ARCHIVE_PYTHON=C:\Python312\python.exe
+rem Optional custom paths: MHS_PYTHON for Python; MHS_DATA for an existing data directory.
+if defined MHS_PYTHON call :tryPython "%MHS_PYTHON%"
+rem ARCHIVE_PYTHON remains a compatible alias.
 if defined ARCHIVE_PYTHON call :tryPython "%ARCHIVE_PYTHON%"
 if defined PYTHON goto python_ready
 
@@ -27,8 +29,8 @@ for /f "delims=" %%P in ('where python 2^>nul') do call :tryPython "%%P"
 if defined PYTHON goto python_ready
 
 echo [ERROR] 未找到可运行的 Python 3.11 或更高版本。
-echo 请安装 Python，或将本文件上方的 ARCHIVE_PYTHON 指向 python.exe。
-echo 也可在当前终端先运行：set "ARCHIVE_PYTHON=你的完整Python路径"
+echo 请安装 Python，或将MHS_PYTHON 环境变量 指向 python.exe。
+echo 也可在当前终端先运行：set "MHS_PYTHON=你的完整Python路径"
 echo 不需要额外安装 Python Launcher。
 goto fail
 
@@ -54,11 +56,15 @@ if errorlevel 1 (
   if errorlevel 1 goto fail
 )
 echo.
-echo 启动 Hybrid 0.7.1。请保持此窗口运行，不要同时启动旧版本。
+echo 启动 MHS-Downloader 0.8.0。请保持此窗口运行，不要同时启动旧版本。
 echo 若提示端口占用，请先关闭旧 Python 窗口，再重新运行。
-".venv\Scripts\python.exe" native\server.py
+if defined MHS_DATA (
+  ".venv\Scripts\python.exe" native\server.py --data "%MHS_DATA%"
+) else (
+  ".venv\Scripts\python.exe" native\server.py
+)
 if errorlevel 1 goto fail
-echo 本机程序已退出。重新启动后未完成下载会继续。
+echo 本机程序已退出。进度已保留，重新启动后请在浮动面板点击继续。
 pause
 exit /b 0
 

@@ -1,0 +1,45 @@
+TAP version 13
+# Subtest: valid source normalized without adding a default
+ok 1 - valid source normalized without adding a default
+  ---
+  duration_ms: 1.436391
+  ...
+# Subtest: profile paths
+ok 2 - profile paths
+  ---
+  duration_ms: 0.247978
+  ...
+# Subtest: host spoofing, userinfo, non HTTPS and extra ports refused
+ok 3 - host spoofing, userinfo, non HTTPS and extra ports refused
+  ---
+  duration_ms: 0.144877
+  ...
+# Subtest: actual signed display image preserved; no original rewrite
+ok 4 - actual signed display image preserved; no original rewrite
+  ---
+  duration_ms: 0.293877
+  ...
+# Subtest: thumbnails and foreign assets excluded
+ok 5 - thumbnails and foreign assets excluded
+  ---
+  duration_ms: 0.261976
+  ...
+# Subtest: Retry-After never shortens a server delay
+ok 6 - Retry-After never shortens a server delay
+  ---
+  duration_ms: 0.183413
+  ...
+# Subtest: blocked images are not labelled complete by the UI
+ok 7 - blocked images are not labelled complete by the UI
+  ---
+  duration_ms: 1.20426
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 53.722687

@@ -40,8 +40,28 @@ test_200_never_appends (test_engine.PolicyTests.test_200_never_appends) ... ok
 test_invalid_range_rejected (test_engine.PolicyTests.test_invalid_range_rejected) ... ok
 test_urls (test_engine.PolicyTests.test_urls) ... ok
 test_valid_206 (test_engine.PolicyTests.test_valid_206) ... ok
+test_atomic_image_limit (test_queue.QueueTests.test_atomic_image_limit) ... ok
+test_atomic_work_limit (test_queue.QueueTests.test_atomic_work_limit) ... ok
+test_create_without_start_stays_paused (test_queue.QueueTests.test_create_without_start_stays_paused) ... ok
+test_diagnostic_and_event_explain_start (test_queue.QueueTests.test_diagnostic_and_event_explain_start) ... ok
+test_disable_auto_recovery (test_queue.QueueTests.test_disable_auto_recovery) ... ok
+test_existing_submission_never_resumes (test_queue.QueueTests.test_existing_submission_never_resumes) ... ok
+test_legacy_upgrade_creates_backup_before_mutation (test_queue.QueueTests.test_legacy_upgrade_creates_backup_before_mutation) ... ok
+test_limit_cannot_delete_reserved_data (test_queue.QueueTests.test_limit_cannot_delete_reserved_data) ... ok
+test_no_target_default (test_queue.QueueTests.test_no_target_default) ... ok
+test_partial_retry_backoff_and_exhaustion (test_queue.QueueTests.test_partial_retry_backoff_and_exhaustion) ... ok
+test_pause_all_and_archive_preserve_files (test_queue.QueueTests.test_pause_all_and_archive_preserve_files) ... ok
+test_per_job_transfer_concurrency (test_queue.QueueTests.test_per_job_transfer_concurrency) ... ok
+test_raise_image_limit_recovers_rest_of_same_work (test_queue.QueueTests.test_raise_image_limit_recovers_rest_of_same_work) ... ok
+test_restart_pauses_and_retains_history (test_queue.QueueTests.test_restart_pauses_and_retains_history) ... ok
+test_retry_can_recover_14_of_91_without_duplicates (test_queue.QueueTests.test_retry_can_recover_14_of_91_without_duplicates) ... ok
+test_revision_is_required (test_queue.QueueTests.test_revision_is_required) ... ok
+test_settings_validation (test_queue.QueueTests.test_settings_validation) ... ok
+test_stale_discovery_and_parse_after_pause_resume (test_queue.QueueTests.test_stale_discovery_and_parse_after_pause_resume) ... ok
+test_user_limit_is_not_partial_failure (test_queue.QueueTests.test_user_limit_is_not_partial_failure) ... ok
+test_zero_means_safety_ceiling (test_queue.QueueTests.test_zero_means_safety_ceiling) ... ok
 
 ----------------------------------------------------------------------
-Ran 42 tests in 1.139s
+Ran 62 tests in 1.307s
 
 OK

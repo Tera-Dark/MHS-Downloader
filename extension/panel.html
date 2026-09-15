@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MHS-Downloader · 米画师页内面板</title><link rel="stylesheet" href="panel.css"></head>
+<body>
+<header><div class="brand"><span class="mark">M<span>↓</span></span><div><strong>MHS<span class="wordmark">-Downloader</span></strong><small>米画师 · 作品采集助手 <b>0.8.0</b></small></div></div><button id="close" class="icon" title="收起面板" aria-label="收起面板">×</button></header>
+<div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">正在检查本机连接…</span><button id="refresh" class="text-button">刷新</button></div>
+<nav aria-label="面板分页"><button class="selected" data-tab="collect">采集作品</button><button data-tab="tasks">任务 <span id="task-count">0</span></button><button data-tab="connect">连接与设置</button></nav>
+<div id="notice" role="status" hidden></div>
+<main>
+<section id="view-collect" class="view">
+  <div class="intro"><span class="eyebrow">YOUR ARTWORK LIBRARY</span><h1>把喜欢的作品，留在本地。</h1><p>只在你点击开始后采集。没有预设画师。</p></div>
+  <form id="create-form">
+    <div class="section-head"><h2><i>01</i> 选择来源</h2><button type="button" id="use-current" class="text-button">使用当前页 ↗</button></div>
+    <label class="sr-only" for="source">画师主页或作品链接</label><input id="source" type="url" required placeholder="粘贴画师主页或作品链接" autocomplete="off" spellcheck="false">
+    <p class="hint">支持 profiles、users 主页及 artworks 详情页。不会自动填入或提交。</p>
+    <div class="section-head"><h2><i>02</i> 设置范围</h2><span class="tiny">0 = 不设用户上限</span></div>
+    <div class="two"><label>最多采集作品 <span>幅</span><input name="max_works" id="max_works" type="number" min="0" max="5000" step="1" value="100" required></label><label>最多入队图片 <span>张</span><input name="max_images" id="max_images" type="number" min="0" max="10000" step="1" value="100" required></label></div>
+    <div class="note">一幅作品可能有多张图片，任一上限触发即停止新增。图片按入队计数，失败也占位；0 仍受 5,000 幅 / 10,000 张安全上限约束。</div>
+    <label class="field-title" for="mode">保存方式</label><select id="mode"><option value="download">下载图片到本机</option><option value="links">仅收集详情图片链接</option></select>
+    <div class="section-head"><h2><i>03</i> 采集节奏</h2><span class="tiny" id="speed-label">均衡</span></div>
+    <div class="presets" aria-label="速度预设"><button type="button" data-preset="safe">稳妥 <small>1 并发 · 3 秒</small></button><button type="button" data-preset="balanced" class="selected">均衡 <small>3 并发 · 1.5 秒</small></button><button type="button" data-preset="fast">较快 <small>4 并发 · 1 秒</small></button></div>
+    <details class="advanced"><summary>自定义节奏与恢复 <span>补扫默认 3 次</span></summary><div class="two"><label>下载并发<input name="concurrency" id="concurrency" type="number" min="1" max="4" value="3" required></label><label>页面间隔 / 秒<input name="page_delay" id="page_delay" type="number" min="1" max="10" step="0.5" value="1.5" required></label><label>不完整自动补扫<input name="scan_retries" id="scan_retries" type="number" min="0" max="5" value="3" required></label><label>解析 / 文件重试<input name="file_retries" id="file_retries" type="number" min="0" max="5" value="3" required></label></div><p class="hint">补扫采用递增等待；已有作品去重保留。登录、验证和限流会单独拦截，不循环重试。</p></details>
+
+  </form>
+</section>
+<section id="view-tasks" class="view" hidden>
+  <div class="section-head"><div><span class="eyebrow">PERSISTENT QUEUE</span><h1>本机任务</h1></div><button id="pause-all" class="secondary small">暂停全部</button></div>
+  <div id="hold-box" class="warning" hidden><strong>采集已被安全拦截</strong><p id="hold-reason"></p><button id="clear-hold" class="secondary small">官网已恢复，解除拦截</button></div>
+  <div id="browser-note" class="note" hidden></div>
+  <div class="task-tools"><span id="queue-summary" class="tiny">还没有任务</span><label class="tiny"><input id="show-history" type="checkbox"> 显示已归档</label></div>
+  <div id="jobs"></div>
+  <details class="records"><summary>错误与诊断 <span id="error-count">0</span></summary><div id="errors" class="record-body"></div></details>
+  <details class="records"><summary>导出记录 <button id="open-exports" class="text-button" type="button">打开导出目录 ↗</button></summary><div id="exports" class="record-body"></div></details>
+  <details class="records"><summary>操作记录 <span>查看任务为何启动</span></summary><div id="events" class="record-body"></div></details>
+</section>
+<section id="view-connect" class="view" hidden>
+  <span class="eyebrow">LOCAL BRIDGE</span><h1>一次连接，就在页内操作。</h1><p class="intro-copy">本机负责持久队列与文件下载，Chrome 只读取你能正常访问的作品页面。</p>
+  <ol class="steps"><li><span>1</span><div><strong>启动本机程序</strong><p>双击项目中的 START-WINDOWS.bat，保持窗口运行。支持已安装的 Python 3.12，不要求 py。</p></div></li><li><span>2</span><div><strong>复制窗口中的配对令牌</strong><p>令牌留在扩展内部，不放入米画师页面。升级后可能需要重新配对。</p></div></li></ol>
+  <form id="pair-form"><label class="field-title" for="token">本机配对令牌</label><div class="token-row"><input id="token" type="password" placeholder="在此粘贴完整令牌" autocomplete="off" spellcheck="false" required><button type="button" id="show-token" class="secondary" aria-label="显示令牌">显示</button></div><button id="pair" type="submit" class="primary wide">连接本机 · 不启动采集</button></form>
+  <button id="diagnose" class="text-button standalone">检查本机程序与版本 ↗</button>
+  <div class="note success-note"><strong>不会因配对而开跑</strong><p>新任务必须点“开始新任务”；历史任务必须点“继续”。本机重启后所有未完成任务暂停，文件和检查点保留。</p></div>
+  <h2 class="subhead">保存位置</h2><code id="data-root">连接后显示</code><div class="button-row"><button id="open-root" class="secondary small">打开数据目录</button><button id="open-images" class="secondary small">打开图片目录</button></div>
+  <details class="records"><summary>使用说明与故障处理</summary><div class="record-body"><p>关闭浮动面板不停止已启动任务。关闭浏览器后，已入队的本机下载仍可继续；重新打开浏览器不会自动恢复页面采集，请点“继续”。要停下所有环节，请先“暂停全部”。</p><p>发现数量和下载数量是两回事。14 / 91 即使 14 张全部保存，也仍是列表未扫全；程序会在上限内补扫，耗尽后保留“不完整”状态。</p><p>遇到登录、验证、429 或受限响应，请在官网人工处理，再解除拦截。本工具不绕过访问限制。</p><p>下载的是详情页实际展示图，不保证为原始上传文件。仅保存你有权使用的内容；没有强制授权勾选。</p><p>连接失败：先关闭旧版 Python 窗口，再运行新版 BAT；重新加载扩展并刷新米画师页面；确认本地网络访问未被浏览器拦截。</p></div></details>
+</section>
+</main><div id="launchbar"><button type="submit" form="create-form" id="start" class="primary wide">开始新任务 <span>→</span></button><p class="center hint">专用后台标签页采集，不滚动你正在看的页面。</p></div><footer><span><i></i> LOCAL FIRST</span><span>发现 · 解析 · 保存</span></footer>
+<script src="panel.js"></script></body></html>
